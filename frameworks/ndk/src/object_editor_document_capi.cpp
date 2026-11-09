@@ -414,7 +414,7 @@ ContentEmbed_ErrorCode OH_ContentEmbed_CreateDocumentByFile(const char *srcFileP
         }
 #ifdef IS_EMULATOR
         OBJECT_EDITOR_LOGE(ObjectEditorDomain::CLIENT_NDK, "emulator is not supported");
-        return CE_ERR_EMULATOR_LINKING_PATH;
+        return CE_ERR_EMULATOR_NOT_SUPPORTED;
 #endif
     }
     auto *wrapper = new (std::nothrow) ContentEmbed_Document{{}, isLinking, {}, path, {}, {}, std::move(doc)};

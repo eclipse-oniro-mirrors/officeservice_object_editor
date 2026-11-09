@@ -816,20 +816,18 @@ bool ObjectEditorManagerSystemAbility::CheckClientFileValid(const ObjectEditorDo
         uriVec.push_back(document.GetTmpFileUri().value());
     }
     uriVec.push_back(document.GetSnapshotUri());
-    if (document.GetOperateType() == OperateType::CREATE_BY_FILE) {
-        if (document.GetNativeFileUri().has_value()) {
-            if (document.GetLinking()) {
-                if (SystemUtils::IsAppSandboxPath(document.GetNativeFileUri().value())) {
-                    OBJECT_EDITOR_LOGE(ObjectEditorDomain::SA, "link not support sandbox");
-                    return false;
-                }
-#ifdef IS_EMULATOR
-                OBJECT_EDITOR_LOGE(ObjectEditorDomain::CLIENT_NDK, "emulator is not supported");
-                return CE_ERR_EMULATOR_LINKING_PATH;
-#endif
+    if (document.GetOperateType() == OperateType::CREATE_BY_FILE && document.GetNativeFileUri().has_value()) {
+        if (document.GetLinking()) {
+            if (SystemUtils::IsAppSandboxPath(document.GetNativeFileUri().value())) {
+                OBJECT_EDITOR_LOGE(ObjectEditorDomain::SA, "link not support sandbox");
+                return false;
             }
-            uriVec.push_back(document.GetNativeFileUri().value());
+#ifdef IS_EMULATOR
+            OBJECT_EDITOR_LOGE(ObjectEditorDomain::SA, "emulator is not supported");
+            return false;
+#endif
         }
+        uriVec.push_back(document.GetNativeFileUri().value());
     }
     auto tokenId = IPCSkeleton::GetCallingTokenID();
     OBJECT_EDITOR_LOGI(ObjectEditorDomain::SA, "tokenId = %{private}d", tokenId);

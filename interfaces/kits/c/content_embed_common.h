@@ -74,7 +74,7 @@ typedef enum ContentEmbed_ErrorCode {
      * @brief The capability is not supported on the emulator at this time.
      * @since 24
      */
-    CE_ERR_EMA_NOT_SUPPORTED = 804,
+    CE_ERR_EMULATOR_NOT_SUPPORTED = 804,
     /**
      * @brief The error code when unexpected null pointer.
      * @since 24
