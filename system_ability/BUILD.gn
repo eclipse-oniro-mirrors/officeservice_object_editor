@@ -105,6 +105,9 @@ ohos_shared_library("content_embed_service") {
     external_deps += [ "dlp_permission_service:libdlp_permission_sdk" ]
     defines += [ "WITH_DLP" ]
   }
+  if (object_editor_emulator) {
+    defines += [ "IS_EMULATOR" ]
+  }
   part_name = "object_editor"
   subsystem_name = "officeservice"
 }

@@ -818,9 +818,15 @@ bool ObjectEditorManagerSystemAbility::CheckClientFileValid(const ObjectEditorDo
     uriVec.push_back(document.GetSnapshotUri());
     if (document.GetOperateType() == OperateType::CREATE_BY_FILE) {
         if (document.GetNativeFileUri().has_value()) {
-            if (document.GetLinking() && SystemUtils::IsAppSandboxPath(document.GetNativeFileUri().value())) {
-                OBJECT_EDITOR_LOGE(ObjectEditorDomain::SA, "link not support sandbox");
-                return false;
+            if (document.GetLinking()) {
+                if (SystemUtils::IsAppSandboxPath(document.GetNativeFileUri().value())) {
+                    OBJECT_EDITOR_LOGE(ObjectEditorDomain::SA, "link not support sandbox");
+                    return false;
+                }
+#ifdef IS_EMULATOR
+                OBJECT_EDITOR_LOGE(ObjectEditorDomain::CLIENT_NDK, "emulator is not supported");
+                return CE_ERR_EMULATOR_LINKING_PATH;
+#endif
             }
             uriVec.push_back(document.GetNativeFileUri().value());
         }

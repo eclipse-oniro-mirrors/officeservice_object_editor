@@ -407,9 +407,15 @@ ContentEmbed_ErrorCode OH_ContentEmbed_CreateDocumentByFile(const char *srcFileP
             "OEID", "", "FAILTYPE", "CREATE_DOCUMENT_FAIL");
         return CE_ERR_NULL_POINTER;
     }
-    if (isLinking && SystemUtils::IsAppSandboxPath(doc->GetOriFilePath())) {
-        OBJECT_EDITOR_LOGE(ObjectEditorDomain::CLIENT_NDK, "app sandbox path is not supported");
-        return CE_ERR_INVALID_LINKING_PATH;
+    if (isLinking) {
+        if (SystemUtils::IsAppSandboxPath(doc->GetOriFilePath())) {
+            OBJECT_EDITOR_LOGE(ObjectEditorDomain::CLIENT_NDK, "app sandbox path is not supported");
+            return CE_ERR_INVALID_LINKING_PATH;
+        }
+#ifdef IS_EMULATOR
+        OBJECT_EDITOR_LOGE(ObjectEditorDomain::CLIENT_NDK, "emulator is not supported");
+        return CE_ERR_EMULATOR_LINKING_PATH;
+#endif
     }
     auto *wrapper = new (std::nothrow) ContentEmbed_Document{{}, isLinking, {}, path, {}, {}, std::move(doc)};
     if (wrapper == nullptr) {
