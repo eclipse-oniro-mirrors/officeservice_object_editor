@@ -404,6 +404,7 @@ ContentEmbed_ErrorCode OH_ContentEmbed_CreateDocumentByFile(const char *srcFileP
         return CE_ERR_PARAM_INVALID;
     }
     std::string path(srcFilePath, std::min(length, realLen));
+    auto doc = ObjectEditorDocument::CreateByFile(path, isLinking);
     if (doc == nullptr) {
         OBJECT_EDITOR_LOGE(ObjectEditorDomain::CLIENT_NDK, "create document failed");
         HiSysEventWrite(OBJECT_EDITOR, "OPERATE_DOCUMENT_FAIL", OHOS::HiviewDFX::HiSysEvent::EventType::FAULT,

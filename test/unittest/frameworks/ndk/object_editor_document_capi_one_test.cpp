@@ -1920,9 +1920,16 @@ HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Document_Read_006, Tes
  */
 HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Document_GetOEid_004, TestSize.Level1)
 {
+    // Document_GetOEid has no size parameter: it always passes MAX_OEID_LENGTH
+    // (40) as the dest size to strcpy_s. The caller MUST provide a buffer of at
+    // least MAX_OEID_LENGTH bytes. To exercise the strcpy_s-failure branch
+    // safely, use a correctly-sized buffer and a source string of exactly
+    // MAX_OEID_LENGTH chars (one byte too long for the NUL terminator) so that
+    // strcpy_s detects the overflow and returns non-zero without writing past
+    // the buffer.
     ContentEmbed_Document *document = new ContentEmbed_Document();
-    document->oeid = "0003000C-0000-0000-C000-000000000046"; // 36 chars + NUL = 37
-    char oeid[4] = {0}; // far too small -> strcpy_s fails.
+    document->oeid = std::string(MAX_OEID_LENGTH, 'a'); // 40 chars > MAX_OEID_LENGTH-1 (39)
+    char oeid[MAX_OEID_LENGTH] = {0};
     ContentEmbed_ErrorCode ret = OH_ContentEmbed_Document_GetOEid(document, oeid);
     EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
     delete document;
@@ -1936,10 +1943,16 @@ HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Document_GetOEid_004, 
  */
 HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Document_GetNativeFilePath_005, TestSize.Level1)
 {
+    // Document_GetNativeFilePath has no size parameter: it always passes
+    // MAX_PATH_LENGTH (4096) as the dest size to strcpy_s. The caller MUST
+    // provide a buffer of at least MAX_PATH_LENGTH bytes. To exercise the
+    // strcpy_s-failure branch safely, use a correctly-sized buffer and a source
+    // path of exactly MAX_PATH_LENGTH chars (one byte too long for the NUL
+    // terminator) so that strcpy_s detects the overflow and returns non-zero.
     ContentEmbed_Document *document = new ContentEmbed_Document();
     document->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
-    document->oeDocumentInner->SetNativeFileUri("/data/test/test.doc");
-    char nativeFilePath[4] = {0}; // too small -> strcpy_s fails.
+    document->oeDocumentInner->SetNativeFileUri(std::string(MAX_PATH_LENGTH, 'a'));
+    char nativeFilePath[MAX_PATH_LENGTH] = {0};
     ContentEmbed_ErrorCode ret = OH_ContentEmbed_Document_GetNativeFilePath(document, nativeFilePath);
     EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
     delete document;
