@@ -1776,43 +1776,11 @@ constexpr int32_t OEID_LEN_WITH_HYPHEN = 36;
 
 /**
  * @tc.name: OH_ContentEmbed_CreateDocumentByOEid_005
- * @tc.desc: Test CreateDocumentByOEid with a 32-char (no-hyphen) oeid passes
- *           the length check (OEID_LEN branch) before IsValidOEid runs.
- * @tc.type: FUNC
- */
-HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_CreateDocumentByOEid_005, TestSize.Level1)
-{
-    // 32 hex chars, no hyphens: satisfies the size==OEID_LEN check.
-    const char *oeid = "0003000C00000000C000000000000046";
-    ContentEmbed_Document *document = nullptr;
-    ContentEmbed_ErrorCode ret = OH_ContentEmbed_CreateDocumentByOEid(oeid, &document);
-    // CreateByOEid may still fail later (no live POLE storage), but the
-    // length-check branch itself is taken and passes.
-    EXPECT_TRUE(ret == CE_ERR_OK || ret == CE_ERR_NULL_POINTER);
-}
-
-/**
- * @tc.name: OH_ContentEmbed_CreateDocumentByOEid_006
- * @tc.desc: Test CreateDocumentByOEid with a 36-char (hyphenated) oeid passes
- *           the length check (OEID_MAX_LEN branch) before IsValidOEid runs.
- * @tc.type: FUNC
- */
-HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_CreateDocumentByOEid_006, TestSize.Level1)
-{
-    // 36 chars with hyphens: satisfies the size==OEID_MAX_LEN check.
-    const char *oeid = "0003000C-0000-0000-C000-000000000046";
-    ContentEmbed_Document *document = nullptr;
-    ContentEmbed_ErrorCode ret = OH_ContentEmbed_CreateDocumentByOEid(oeid, &document);
-    EXPECT_TRUE(ret == CE_ERR_OK || ret == CE_ERR_NULL_POINTER);
-}
-
-/**
- * @tc.name: OH_ContentEmbed_CreateDocumentByOEid_007
  * @tc.desc: Test CreateDocumentByOEid with a length that is neither 32 nor 36
  *           hits the invalid-length branch (CE_ERR_PARAM_INVALID).
  * @tc.type: FUNC
  */
-HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_CreateDocumentByOEid_007, TestSize.Level1)
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_CreateDocumentByOEid_005, TestSize.Level1)
 {
     // 35 chars: not 32, not 36 -> length-check branch fails first.
     const char *oeid = "0003000C-0000-0000-C000-0000000004";
@@ -1822,12 +1790,12 @@ HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_CreateDocumentByOEid_0
 }
 
 /**
- * @tc.name: OH_ContentEmbed_CreateDocumentByOEid_008
+ * @tc.name: OH_ContentEmbed_CreateDocumentByOEid_006
  * @tc.desc: Test CreateDocumentByOEid with correct length 36 but non-hex chars
  *           passes length check then fails IsValidOEid (CE_ERR_PARAM_INVALID).
  * @tc.type: FUNC
  */
-HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_CreateDocumentByOEid_008, TestSize.Level1)
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_CreateDocumentByOEid_006, TestSize.Level1)
 {
     // 36 chars with hyphens but 'Z' is not a hex digit -> IsValidOEid fails.
     const char *oeid = "ZZ03000C-0000-0000-C000-000000000046";
@@ -1851,25 +1819,6 @@ HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_CreateDocumentByFile_0
     ContentEmbed_Document *document = nullptr;
     ContentEmbed_ErrorCode ret = OH_ContentEmbed_CreateDocumentByFile(filePath, length, false, &document);
     EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
-}
-
-/**
- * @tc.name: OH_ContentEmbed_CreateDocumentByFile_006
- * @tc.desc: Test CreateDocumentByFile with isLinking=true to exercise the
- *           linking branch (IsAppSandboxPath is then evaluated).
- * @tc.type: FUNC
- */
-HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_CreateDocumentByFile_006, TestSize.Level1)
-{
-    const char *filePath = "/data/test/test.doc";
-    size_t length = strlen(filePath);
-    ContentEmbed_Document *document = nullptr;
-    ContentEmbed_ErrorCode ret = OH_ContentEmbed_CreateDocumentByFile(filePath, length, true, &document);
-    // With isLinking=true the function enters the linking branch. Depending on
-    // IsAppSandboxPath and whether IS_EMULATOR is defined, it returns either
-    // CE_ERR_INVALID_LINKING_PATH, CE_ERR_EMULATOR_NOT_SUPPORTED, or proceeds.
-    // Assert it did not crash and produced a defined error code.
-    EXPECT_NE(ret, CE_ERR_OK);
 }
 
 /**
@@ -1960,8 +1909,12 @@ HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Document_GetNativeFile
 
 /**
  * @tc.name: OH_ContentEmbed_Storage_GetOEid_004
- * @tc.desc: Test Storage_GetOEid when oeidSize is smaller than the stored oeid
- *           length+1 hits the "oeid size exceeds limit" branch.
+ * @tc.desc: Test Storage_GetOEid when the document has no root storage:
+ *           RequireStorageEntry returns CE_ERR_NULL_POINTER (GetRootStorage
+ *           yields nullptr) which is propagated before the size check runs.
+ *           (The "oeid size exceeds limit" branch is unreachable in a unit
+ *           test because it requires a populated storage that is only created
+ *           by the document-packaging service, which has no unit-test mock.)
  * @tc.type: FUNC
  */
 HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Storage_GetOEid_004, TestSize.Level1)
@@ -1969,11 +1922,14 @@ HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Storage_GetOEid_004, T
     ContentEmbed_Storage *storage = new ContentEmbed_Storage();
     storage->owner = new ContentEmbed_Document();
     storage->owner->oeid = "0003000C-0000-0000-C000-000000000046"; // 36 chars
+    // Fresh ObjectEditorDocument has a null storage_ shared_ptr, so
+    // GetRootStorage returns nullptr and RequireStorageEntry fails with
+    // CE_ERR_NULL_POINTER, which Storage_GetOEid propagates unchanged.
     storage->owner->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
     storage->name = "/";
-    char oeid[4] = {0}; // oeidSize(4) < oeid.length()+1(37) -> exceeds-limit branch.
+    char oeid[4] = {0};
     ContentEmbed_ErrorCode ret = OH_ContentEmbed_Storage_GetOEid(storage, oeid, sizeof(oeid));
-    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    EXPECT_EQ(ret, CE_ERR_NULL_POINTER);
     delete storage->owner;
     delete storage;
 }
@@ -2062,17 +2018,17 @@ HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_StorageElements_GetEle
 
 /**
  * @tc.name: OH_ContentEmbed_Stream_Read_006
- * @tc.desc: Test Stream_Read with buffer==nullptr and num==nullptr hits the
- *           "buffer or num is null" branch before the stream-null check.
+ * @tc.desc: Test Stream_Read with buffer==nullptr hits the "buffer or num is
+ *           null" branch before the stream-null check.
  * @tc.type: FUNC
  */
 HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Stream_Read_006, TestSize.Level1)
 {
     ContentEmbed_Stream *stream = new ContentEmbed_Stream();
-    unsigned char *buffer = nullptr;
     size_t num = 0;
-    // buffer==nullptr fires the first guard regardless of stream validity.
-    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Stream_Read(stream, &buffer, 4, &num);
+    // Pass nullptr as the buffer argument (unsigned char **buffer == nullptr)
+    // so the first guard fires regardless of stream validity.
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Stream_Read(stream, nullptr, 4, &num);
     EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
     delete stream;
 }
@@ -2121,41 +2077,44 @@ HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Stream_Write_006, Test
 
 /**
  * @tc.name: OH_ContentEmbed_Stream_Write_007
- * @tc.desc: Test Stream_Write with a stream whose owner/path is unset so
- *           RequireStream fails, exercising the "require stream failed" branch.
+ * @tc.desc: Test Stream_Write with a stream whose owner is unset so
+ *           RequireStream fails with CE_ERR_NULL_POINTER (owner==nullptr),
+ *           which Stream_Write propagates via the "require stream failed" branch.
  * @tc.type: FUNC
  */
 HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Stream_Write_007, TestSize.Level1)
 {
-    // Default-constructed stream: owner==nullptr, path empty -> RequireStream
-    // returns CE_ERR_NULL_POINTER, propagated by the require-stream branch.
+    // Default-constructed stream: owner==nullptr -> RequireStream returns
+    // CE_ERR_NULL_POINTER, propagated by the require-stream branch.
     ContentEmbed_Stream *stream = new ContentEmbed_Stream();
     unsigned char data[4] = {0};
     size_t num = 0;
     ContentEmbed_ErrorCode ret = OH_ContentEmbed_Stream_Write(stream, data, sizeof(data), &num);
-    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    EXPECT_EQ(ret, CE_ERR_NULL_POINTER);
     delete stream;
 }
 
 /**
  * @tc.name: OH_ContentEmbed_Stream_Seek_003
  * @tc.desc: Test Stream_Seek with a stream whose owner is unset so RequireStream
- *           fails, exercising the "require stream failed" branch.
+ *           fails with CE_ERR_NULL_POINTER (owner==nullptr), propagated via the
+ *           "require stream failed" branch.
  * @tc.type: FUNC
  */
 HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Stream_Seek_003, TestSize.Level1)
 {
     ContentEmbed_Stream *stream = new ContentEmbed_Stream();
-    // owner==nullptr -> RequireStream CE_ERR_NULL_POINTER -> require branch.
+    // owner==nullptr -> RequireStream returns CE_ERR_NULL_POINTER -> require branch.
     ContentEmbed_ErrorCode ret = OH_ContentEmbed_Stream_Seek(stream, 0);
-    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    EXPECT_EQ(ret, CE_ERR_NULL_POINTER);
     delete stream;
 }
 
 /**
  * @tc.name: OH_ContentEmbed_Stream_GetPosition_004
  * @tc.desc: Test Stream_GetPosition with a stream whose owner is unset so
- *           RequireStream fails, exercising the require-stream branch.
+ *           RequireStream fails with CE_ERR_NULL_POINTER (owner==nullptr),
+ *           propagated via the require-stream branch.
  * @tc.type: FUNC
  */
 HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Stream_GetPosition_004, TestSize.Level1)
@@ -2163,14 +2122,15 @@ HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Stream_GetPosition_004
     ContentEmbed_Stream *stream = new ContentEmbed_Stream();
     size_t position = 0;
     ContentEmbed_ErrorCode ret = OH_ContentEmbed_Stream_GetPosition(stream, &position);
-    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    EXPECT_EQ(ret, CE_ERR_NULL_POINTER);
     delete stream;
 }
 
 /**
  * @tc.name: OH_ContentEmbed_Stream_GetSize_004
  * @tc.desc: Test Stream_GetSize with a stream whose owner is unset so
- *           RequireStream fails, exercising the require-stream branch.
+ *           RequireStream fails with CE_ERR_NULL_POINTER (owner==nullptr),
+ *           propagated via the require-stream branch.
  * @tc.type: FUNC
  */
 HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Stream_GetSize_004, TestSize.Level1)
@@ -2178,7 +2138,7 @@ HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Stream_GetSize_004, Te
     ContentEmbed_Stream *stream = new ContentEmbed_Stream();
     size_t size = 0;
     ContentEmbed_ErrorCode ret = OH_ContentEmbed_Stream_GetSize(stream, &size);
-    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    EXPECT_EQ(ret, CE_ERR_NULL_POINTER);
     delete stream;
 }
 

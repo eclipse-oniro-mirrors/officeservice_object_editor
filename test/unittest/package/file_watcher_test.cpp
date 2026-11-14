@@ -16,9 +16,10 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include <cerrno>
+#include <cstdio>
 #include <cstring>
 #include <fcntl.h>
-#include <stdio.h>
+#include <string>
 #include <unistd.h>
 #include <sys/inotify.h>
 #include "securec.h"
@@ -69,7 +70,6 @@ std::string g_callbackFilepath;
 constexpr uint64_t FILE_WATCHER_TAG_ID = 0xD005118;
 const uint64_t FILE_WATCHER_FD_TAG =
     fdsan_create_owner_tag(FDSAN_OWNER_TYPE_DEFAULT, FILE_WATCHER_TAG_ID);
-constexpr int32_t TEMP_PATH_MAX_LEN = 64;
 
 void MockEventCallback(uint32_t mask, const std::string &filepath)
 {
@@ -283,12 +283,11 @@ HWTEST_F(FileWatcherTest, CleanupResources_002, TestSize.Level1)
     // mismatch. Create a real inotify fd, tag it with the replicated production
     // tag, and attach a real watch on a temp file so both the inotify_rm_watch
     // and fdsan_close_with_tag branches execute cleanly.
-    char tmpFile[TEMP_PATH_MAX_LEN] = {0};
-    snprintf(tmpFile, sizeof(tmpFile), "/data/local/tmp/fw_test_%d", getpid());
-    int fileFd = open(tmpFile, O_CREAT | O_RDWR | O_TRUNC, 0600);
+    std::string tmpFile = "/data/local/tmp/fw_test_" + std::to_string(getpid());
+    int fileFd = open(tmpFile.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0600);
     if (fileFd < 0) {
-        snprintf(tmpFile, sizeof(tmpFile), "fw_test_%d", getpid());
-        fileFd = open(tmpFile, O_CREAT | O_RDWR | O_TRUNC, 0600);
+        tmpFile = "fw_test_" + std::to_string(getpid());
+        fileFd = open(tmpFile.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0600);
     }
     ASSERT_GE(fileFd, 0) << "failed to create temp file for inotify watch";
     close(fileFd);
@@ -296,10 +295,10 @@ HWTEST_F(FileWatcherTest, CleanupResources_002, TestSize.Level1)
     int fd = inotify_init1(IN_NONBLOCK);
     ASSERT_GE(fd, 0);
     fdsan_exchange_owner_tag(fd, 0, FILE_WATCHER_FD_TAG);
-    int wd = inotify_add_watch(fd, tmpFile, IN_MODIFY);
+    int wd = inotify_add_watch(fd, tmpFile.c_str(), IN_MODIFY);
     if (wd < 0) {
         fdsan_close_with_tag(fd, FILE_WATCHER_FD_TAG);
-        unlink(tmpFile);
+        unlink(tmpFile.c_str());
         FAIL() << "inotify_add_watch failed: " << strerror(errno);
     }
 
@@ -312,7 +311,7 @@ HWTEST_F(FileWatcherTest, CleanupResources_002, TestSize.Level1)
     EXPECT_EQ(watcher->watchDescriptor_, -1);
     EXPECT_EQ(watcher->running_.load(), false);
 
-    unlink(tmpFile);
+    unlink(tmpFile.c_str());
 }
 
 /**
