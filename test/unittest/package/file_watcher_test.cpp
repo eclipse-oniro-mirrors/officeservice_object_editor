@@ -15,8 +15,13 @@
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
-#include <sys/inotify.h>
+#include <cerrno>
+#include <cstdio>
 #include <cstring>
+#include <fcntl.h>
+#include <string>
+#include <unistd.h>
+#include <sys/inotify.h>
 #include "securec.h"
 #include "file_watcher.h"
 #include "hilog_object_editor.h"
@@ -55,6 +60,16 @@ namespace {
 
 uint32_t g_callbackMask = 0;
 std::string g_callbackFilepath;
+
+// Replicates the file-scope const from file_watcher.cpp's anonymous namespace
+// (which is not exported). CleanupResources() calls
+// fdsan_close_with_tag(inotifyFd_, FILE_WATCHER_FD_TAG), so a test that hands
+// the watcher a real inotify fd MUST tag that fd with this exact value first,
+// otherwise fdsan aborts with a tag mismatch. See fault log
+// fdsan-file_watcher_test-0-20261114114244300.log.
+constexpr uint64_t FILE_WATCHER_TAG_ID = 0xD005118;
+const uint64_t FILE_WATCHER_FD_TAG =
+    fdsan_create_owner_tag(FDSAN_OWNER_TYPE_DEFAULT, FILE_WATCHER_TAG_ID);
 
 void MockEventCallback(uint32_t mask, const std::string &filepath)
 {
@@ -263,14 +278,40 @@ HWTEST_F(FileWatcherTest, CleanupResources_001, TestSize.Level1)
  */
 HWTEST_F(FileWatcherTest, CleanupResources_002, TestSize.Level1)
 {
+    // CleanupResources() calls fdsan_close_with_tag(inotifyFd_, FILE_WATCHER_FD_TAG).
+    // Handing it an arbitrary unowned fd (e.g. 10) makes fdsan abort on tag
+    // mismatch. Create a real inotify fd, tag it with the replicated production
+    // tag, and attach a real watch on a temp file so both the inotify_rm_watch
+    // and fdsan_close_with_tag branches execute cleanly.
+    std::string tmpFile = "/data/local/tmp/fw_test_" + std::to_string(getpid());
+    int fileFd = open(tmpFile.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0600);
+    if (fileFd < 0) {
+        tmpFile = "fw_test_" + std::to_string(getpid());
+        fileFd = open(tmpFile.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0600);
+    }
+    ASSERT_GE(fileFd, 0) << "failed to create temp file for inotify watch";
+    close(fileFd);
+
+    int fd = inotify_init1(IN_NONBLOCK);
+    ASSERT_GE(fd, 0);
+    fdsan_exchange_owner_tag(fd, 0, FILE_WATCHER_FD_TAG);
+    int wd = inotify_add_watch(fd, tmpFile.c_str(), IN_MODIFY);
+    if (wd < 0) {
+        fdsan_close_with_tag(fd, FILE_WATCHER_FD_TAG);
+        unlink(tmpFile.c_str());
+        FAIL() << "inotify_add_watch failed: " << strerror(errno);
+    }
+
     auto watcher = std::make_unique<FileWatcher>("/test/file",
         [](uint32_t mask, const std::string &filepath) {});
-    watcher->inotifyFd_ = 10;
-    watcher->watchDescriptor_ = 5;
+    watcher->inotifyFd_ = fd;
+    watcher->watchDescriptor_ = wd;
     watcher->CleanupResources();
-    EXPECT_EQ(watcher->watchDescriptor_, -1);
     EXPECT_EQ(watcher->inotifyFd_, -1);
+    EXPECT_EQ(watcher->watchDescriptor_, -1);
     EXPECT_EQ(watcher->running_.load(), false);
+
+    unlink(tmpFile.c_str());
 }
 
 /**

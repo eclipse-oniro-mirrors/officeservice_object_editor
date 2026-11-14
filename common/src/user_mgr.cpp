@@ -89,7 +89,10 @@ void UserMgr::SetNewUserId(int32_t newUserId)
 
 int32_t UserMgr::GetUserId()
 {
-    std::shared_lock<std::shared_mutex> lock(mtx_);
+    // GetUserId refreshes userId_ (a write), so it must hold the write lock.
+    // shared_lock allows concurrent holders, which would race on the write and
+    // also break reader/writer synchronization with SetNewUserId().
+    std::unique_lock<std::shared_mutex> lock(mtx_);
     userId_ = GetCurrentUserId();
     return userId_;
 }

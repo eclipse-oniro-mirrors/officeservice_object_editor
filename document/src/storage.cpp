@@ -2752,18 +2752,21 @@ bool StorageIO::WriteBufferToFile(const std::string &filename)
         OBJECT_EDITOR_LOGE(ObjectEditorDomain::DOCUMENT, "NormalizeFilePath failed");
         return false;
     }
-    std::ofstream outFile(canonicalFileName.c_str(), std::ios::binary | std::ios::trunc | std::ios::out);
-    OBJECT_EDITOR_LOGD(ObjectEditorDomain::DOCUMENT, "filename: %{private}s", canonicalFileName.c_str());
-    if (!outFile || outFile.fail()) {
-        OBJECT_EDITOR_LOGE(ObjectEditorDomain::DOCUMENT, "open file failed");
-        return false;
-    }
+    // Validate the in-memory payload BEFORE opening the target: ofstream in out
+    // mode truncates an existing file on open (equivalent to fopen("w")), so a
+    // null buffer discovered afterwards would leave the file destroyed empty.
     if (memoryBuffer_ == nullptr) {
         OBJECT_EDITOR_LOGE(ObjectEditorDomain::DOCUMENT, "memoryBuffer is null");
         return false;
     }
     const size_t usedSize = size_ > 0 ? static_cast<size_t>(size_) : 0;
     const size_t writeSize = std::min(usedSize, memoryBuffer_->size());
+    std::ofstream outFile(canonicalFileName.c_str(), std::ios::binary | std::ios::out);
+    OBJECT_EDITOR_LOGD(ObjectEditorDomain::DOCUMENT, "filename: %{private}s", canonicalFileName.c_str());
+    if (!outFile || outFile.fail()) {
+        OBJECT_EDITOR_LOGE(ObjectEditorDomain::DOCUMENT, "open file failed");
+        return false;
+    }
     outFile.write(reinterpret_cast<const char *>(memoryBuffer_->data()), writeSize);
     if (!outFile.good()) {
         SetError(ErrorCode::IOError, "Failed to write file");
