@@ -1048,5 +1048,227 @@ HWTEST_F(ObjectEditorExtensionCapiOneTest,
     EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
 }
 
+
+/**
+ * @tc.name: OHContentEmbedExtensionGetContentEmbedContext_003
+ * @tc.desc: Test GetContentEmbedContext when extension weak_ptr is empty so
+ *           extension.lock() returns null
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorExtensionCapiOneTest, OHContentEmbedExtensionGetContentEmbedContext_003, TestSize.Level1)
+{
+    ContentEmbed_ExtensionInstance *instance = new ContentEmbed_ExtensionInstance();
+    // Default-constructed instance has an empty extension weak_ptr, so
+    // extension.lock() returns nullptr and the API short-circuits.
+    ContentEmbed_ExtensionContextHandle ceContext = nullptr;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Extension_GetContentEmbedContext(instance, &ceContext);
+    EXPECT_EQ(ret, CE_ERR_NULL_POINTER);
+    // The API sets *ceContext to nullptr before the lookup fails.
+    EXPECT_EQ(ceContext, nullptr);
+    delete instance;
+}
+
+/**
+ * @tc.name: OHContentEmbedExtensionGetContext_003
+ * @tc.desc: Test GetContext success case with a non-null ceContext
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorExtensionCapiOneTest, OHContentEmbedExtensionGetContext_003, TestSize.Level1)
+{
+    ContentEmbed_ExtensionContext *ceContext = new ContentEmbed_ExtensionContext();
+    AbilityRuntime_ContextHandle context = nullptr;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Extension_GetContext(ceContext, &context);
+    EXPECT_EQ(ret, CE_ERR_OK);
+    // static_cast is an identity cast, so the returned handle equals the input.
+    EXPECT_NE(context, nullptr);
+    EXPECT_EQ(context, static_cast<AbilityRuntime_ContextHandle>(ceContext));
+    delete ceContext;
+}
+
+/**
+ * @tc.name: OHContentEmbedExtensionGetExtensionInstance_003
+ * @tc.desc: Test GetExtensionInstance success case with a non-null baseInstance
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorExtensionCapiOneTest, OHContentEmbedExtensionGetExtensionInstance_003, TestSize.Level1)
+{
+    AbilityRuntime_ExtensionInstanceHandle baseInstance =
+        reinterpret_cast<AbilityRuntime_ExtensionInstanceHandle>(0x100);
+    ContentEmbed_ExtensionInstanceHandle ceInstance = nullptr;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Extension_GetExtensionInstance(baseInstance, &ceInstance);
+    EXPECT_EQ(ret, CE_ERR_OK);
+    // static_cast is an identity cast, so the returned handle equals the input.
+    EXPECT_NE(ceInstance, nullptr);
+    EXPECT_EQ(ceInstance, reinterpret_cast<ContentEmbed_ExtensionInstanceHandle>(baseInstance));
+}
+
+/**
+ * @tc.name: OHContentEmbedExtensionSetSnapshot_004
+ * @tc.desc: Test SetSnapshot when snapshot path is empty so
+ *           SystemUtils::ValidateAndNormalizePath fails
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorExtensionCapiOneTest, OHContentEmbedExtensionSetSnapshot_004, TestSize.Level1)
+{
+    ContentEmbed_Object *object = new ContentEmbed_Object();
+    object->document = std::make_unique<ContentEmbed_Document>();
+    // A default ObjectEditorDocument has an empty snapshotUri, so GetSnapshotPath
+    // returns "" and ValidateAndNormalizePath rejects empty paths.
+    object->document->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
+    OH_PixelmapNative *pixelmap = reinterpret_cast<OH_PixelmapNative *>(0x100);
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Extension_SetSnapshot(object, pixelmap);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete object;
+}
+
+/**
+ * @tc.name: OHContentEmbedExtensionSetSnapshot_005
+ * @tc.desc: Test SetSnapshot when document is non-null but oeDocumentInner is
+ *           null (second operand of the null-document guard)
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorExtensionCapiOneTest, OHContentEmbedExtensionSetSnapshot_005, TestSize.Level1)
+{
+    ContentEmbed_Object *object = new ContentEmbed_Object();
+    // document is non-null but oeDocumentInner stays nullptr by default, so the
+    // `object->document == nullptr || oeDocumentInner == nullptr` guard triggers
+    // on its second operand (not covered by SetSnapshot_003 which uses document=null).
+    object->document = std::make_unique<ContentEmbed_Document>();
+    OH_PixelmapNative *pixelmap = reinterpret_cast<OH_PixelmapNative *>(0x100);
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Extension_SetSnapshot(object, pixelmap);
+    EXPECT_EQ(ret, CE_ERR_NULL_POINTER);
+    delete object;
+}
+
+/**
+ * @tc.name: OHContentEmbedExtensionContextStartSelfUIAbility_003
+ * @tc.desc: Test ContextStartSelfUIAbility when extension is stopping
+ *           (isStopping_ == true), verified before the want-null check
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorExtensionCapiOneTest, OHContentEmbedExtensionContextStartSelfUIAbility_003, TestSize.Level1)
+{
+    ContentEmbed_ExtensionContext *context = new ContentEmbed_ExtensionContext();
+    context->isStopping_.store(true);
+    AbilityBase_Want *want = reinterpret_cast<AbilityBase_Want *>(0x100);
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Extension_ContextStartSelfUIAbility(context, want);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete context;
+}
+
+/**
+ * @tc.name: OHContentEmbedExtensionContextStartSelfUIAbility_004
+ * @tc.desc: Test ContextStartSelfUIAbility when context weak_ptr is empty so
+ *           context.lock() returns null (CE_ERR_NULL_POINTER)
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorExtensionCapiOneTest, OHContentEmbedExtensionContextStartSelfUIAbility_004, TestSize.Level1)
+{
+    ContentEmbed_ExtensionContext *context = new ContentEmbed_ExtensionContext();
+    // isStopping_ is false by default and want is non-null, so execution reaches
+    // the context.lock() call. The default-constructed context weak_ptr is empty,
+    // so lock() returns nullptr.
+    AbilityBase_Want *want = reinterpret_cast<AbilityBase_Want *>(0x100);
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Extension_ContextStartSelfUIAbility(context, want);
+    EXPECT_EQ(ret, CE_ERR_NULL_POINTER);
+    delete context;
+}
+
+/**
+ * @tc.name: OHContentEmbedExtensionContextStartSelfUIAbilityWithStartOptions_004
+ * @tc.desc: Test ContextStartSelfUIAbilityWithStartOptions when extension is
+ *           stopping (isStopping_ == true), verified before want/options checks
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorExtensionCapiOneTest,
+    OHContentEmbedExtensionContextStartSelfUIAbilityWithStartOptions_004, TestSize.Level1)
+{
+    ContentEmbed_ExtensionContext *context = new ContentEmbed_ExtensionContext();
+    context->isStopping_.store(true);
+    AbilityBase_Want *want = reinterpret_cast<AbilityBase_Want *>(0x100);
+    AbilityRuntime_StartOptions *options = reinterpret_cast<AbilityRuntime_StartOptions *>(0x200);
+    ContentEmbed_ErrorCode ret =
+        OH_ContentEmbed_Extension_ContextStartSelfUIAbilityWithStartOptions(context, want, options);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete context;
+}
+
+/**
+ * @tc.name: OHContentEmbedExtensionContextStartSelfUIAbilityWithStartOptions_005
+ * @tc.desc: Test ContextStartSelfUIAbilityWithStartOptions when context weak_ptr
+ *           is empty so context.lock() returns null (CE_ERR_NULL_POINTER)
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorExtensionCapiOneTest,
+    OHContentEmbedExtensionContextStartSelfUIAbilityWithStartOptions_005, TestSize.Level1)
+{
+    ContentEmbed_ExtensionContext *context = new ContentEmbed_ExtensionContext();
+    AbilityBase_Want *want = reinterpret_cast<AbilityBase_Want *>(0x100);
+    AbilityRuntime_StartOptions *options = reinterpret_cast<AbilityRuntime_StartOptions *>(0x200);
+    // isStopping_ false, want non-null, options non-null -> reaches context.lock()
+    // which returns nullptr for the default empty context weak_ptr.
+    ContentEmbed_ErrorCode ret =
+        OH_ContentEmbed_Extension_ContextStartSelfUIAbilityWithStartOptions(context, want, options);
+    EXPECT_EQ(ret, CE_ERR_NULL_POINTER);
+    delete context;
+}
+
+/**
+ * @tc.name: OHContentEmbedExtensionContextTerminateAbility_002
+ * @tc.desc: Test ContextTerminateAbility when extension is stopping
+ *           (isStopping_ == true), verified before the weak_ptr expired() check
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorExtensionCapiOneTest, OHContentEmbedExtensionContextTerminateAbility_002, TestSize.Level1)
+{
+    ContentEmbed_ExtensionContext *context = new ContentEmbed_ExtensionContext();
+    context->isStopping_.store(true);
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Extension_ContextTerminateAbility(context);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete context;
+}
+
+/**
+ * @tc.name: OHContentEmbedExtensionContextTerminateAbility_003
+ * @tc.desc: Test ContextTerminateAbility when context weak_ptr is expired
+ *           (CE_ERR_PARAM_INVALID). A default-constructed context weak_ptr is
+ *           empty, so expired() returns true.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorExtensionCapiOneTest, OHContentEmbedExtensionContextTerminateAbility_003, TestSize.Level1)
+{
+    ContentEmbed_ExtensionContext *context = new ContentEmbed_ExtensionContext();
+    // isStopping_ is false by default, so execution reaches the expired() check.
+    // The default context weak_ptr is empty, hence expired().
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Extension_ContextTerminateAbility(context);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete context;
+}
+
+/**
+ * @tc.name: OHContentEmbedExtensionCallbackToOnExtensionStopped_MixedObjects
+ * @tc.desc: Test CallbackToOnExtensionStopped with a mix of a null object and a
+ *           valid object, verifying the null entry is skipped (continue) and the
+ *           valid entry's OnExtensionStopped callback is invoked successfully.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorExtensionCapiOneTest,
+    OHContentEmbedExtensionCallbackToOnExtensionStopped_MixedObjects, TestSize.Level1)
+{
+    ContentEmbed_ExtensionInstance *instance = new ContentEmbed_ExtensionInstance();
+    instance->objects["nullObjectId"] = nullptr;
+    ContentEmbed_Object *object = new ContentEmbed_Object();
+    sptr<MockObjectEditorClientCallback> mockCallback = sptr<MockObjectEditorClientCallback>::MakeSptr();
+    ON_CALL(*mockCallback, OnExtensionStopped()).WillByDefault(Return(ERR_OK));
+    object->clientCb = mockCallback;
+    instance->objects["validObjectId"] = std::shared_ptr<ContentEmbed_Object>(object);
+    // unordered_map iteration order is unspecified, but either ordering yields
+    // CE_ERR_OK: the null entry is skipped and the valid entry succeeds.
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Extension_CallbackToOnExtensionStopped(instance);
+    EXPECT_EQ(ret, CE_ERR_OK);
+    instance->objects.clear();
+    delete instance;
+}
+
 } // namespace ObjectEditor
 } // namespace OHOS

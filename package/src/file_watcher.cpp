@@ -77,8 +77,15 @@ void FileWatcher::Stop()
         return;
     }
     running_.store(false);
-    pthread_join(watchThread_, nullptr);
-    threadCreated_.store(false);
+    // pthread_join(pthread_self()) is undefined behavior per POSIX. Stop() is
+    // reached from the watcher thread itself on error paths (WatchLoop/ReadEvents/
+    // ProcessEvent/HandleReadError); in that case skip the join and let the thread
+    // exit WatchLoop naturally since running_ is now false. External callers
+    // (destructor, ObjectEditorPackage::Stop) still join to reap the thread.
+    if (!pthread_equal(pthread_self(), watchThread_)) {
+        pthread_join(watchThread_, nullptr);
+        threadCreated_.store(false);
+    }
     CleanupResources();
     OBJECT_EDITOR_LOGI(ObjectEditorDomain::PACKAGE, "stop watch file: %{private}s", filepath_.c_str());
 }

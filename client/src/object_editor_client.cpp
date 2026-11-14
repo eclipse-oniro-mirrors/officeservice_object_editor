@@ -806,8 +806,12 @@ void ObjectEditorClient::SARegCleanUp()
         deathRecipient_ = nullptr;
     }
     UnsubscribeSystemAbility();
-    if (remoteObject != nullptr && deathRecipient_ != nullptr) {
-        remoteObject->RemoveDeathRecipient(deathRecipient_);
+    // Use the local snapshot `recipient`, NOT the member `deathRecipient_`:
+    // the member was nulled under the lock above (line 806), so checking it
+    // here would always be false and RemoveDeathRecipient would never run,
+    // leaking the registered DeathRecipient.
+    if (remoteObject != nullptr && recipient != nullptr) {
+        remoteObject->RemoveDeathRecipient(recipient);
     }
 }
 

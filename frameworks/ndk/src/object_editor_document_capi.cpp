@@ -398,8 +398,12 @@ ContentEmbed_ErrorCode OH_ContentEmbed_CreateDocumentByFile(const char *srcFileP
         OBJECT_EDITOR_LOGE(ObjectEditorDomain::CLIENT_NDK, "param is null");
         return CE_ERR_PARAM_INVALID;
     }
-    std::string path(srcFilePath, length);
-    auto doc = ObjectEditorDocument::CreateByFile(path, isLinking);
+    size_t realLen = strnlen(srcFilePath, PATH_MAX);
+    if (realLen == 0) {
+        OBJECT_EDITOR_LOGE(ObjectEditorDomain::CLIENT_NDK, "srcFilePath is empty");
+        return CE_ERR_PARAM_INVALID;
+    }
+    std::string path(srcFilePath, std::min(length, realLen));
     if (doc == nullptr) {
         OBJECT_EDITOR_LOGE(ObjectEditorDomain::CLIENT_NDK, "create document failed");
         HiSysEventWrite(OBJECT_EDITOR, "OPERATE_DOCUMENT_FAIL", OHOS::HiviewDFX::HiSysEvent::EventType::FAULT,
@@ -443,7 +447,8 @@ ContentEmbed_ErrorCode OH_ContentEmbed_LoadDocumentFromFile(const char *srcFileP
         OBJECT_EDITOR_LOGE(ObjectEditorDomain::CLIENT_NDK, "srcFilePath is null");
         return CE_ERR_PARAM_INVALID;
     }
-    std::string path(srcFilePath, length);
+    size_t pathLen = std::min<size_t>(length, strnlen(srcFilePath, length));
+    std::string path(srcFilePath, pathLen);
     HITRACE_METER_FMT(HITRACE_TAG_OHOS, "document::OH_ContentEmbed_LoadDocumentFromFile");
     auto doc = ObjectEditorDocument::LoadFromFile(path);
     if (doc == nullptr) {

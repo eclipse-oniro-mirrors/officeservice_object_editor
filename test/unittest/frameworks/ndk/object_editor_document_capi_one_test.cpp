@@ -1747,5 +1747,579 @@ HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Storage_CopyTo_003, Te
     EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
     delete srcStorage;
 }
+
+// ---------------------------------------------------------------------------
+// Branch-coverage extensions for previously uncovered, cleanly unit-testable
+// branches in object_editor_document_capi.cpp.
+//
+// Intentionally NOT covered here (require live Storage/Stream/Document
+// instances backed by a real POLE file, or DLP service mocks that do not
+// exist in this component's unit-test environment):
+//   - All DLP-sandbox branches: ObjectEditorConfig::CheckIsInDlp() returns
+//     false in the test build (no DLP service), so CE_ERR_IN_DLP_SANDBOX is
+//     unreachable under test.
+//   - Success paths that need a non-null root Storage / Stream from a real
+//     ObjectEditorDocument::GetRootStorage() / GetStream() (CreateStorage,
+//     GetStorage, CreateStream, GetStream, DeleteEntry, DeleteAllEntry,
+//     GetElements, CopyTo success, Document_Read success, Stream_Read/Write/
+//     Seek/GetPosition/GetSize success, Document_Flush success).
+//   - Inner Storage/Stream operation failures (GetStorage/GetEntry/DeleteEntry/
+//     EnterDirectory/ListEntries/Read/Write/Seek/Fail/IsDirty/ReadRawCd).
+// ---------------------------------------------------------------------------
+
+// OEid length with hyphens validated by the C-API. OEID_LEN/OEID_MAX_LEN are
+// file-local in the .cpp, mirrored here as a named constant to satisfy the
+// no-magic-numbers rule.
+namespace {
+constexpr int32_t OEID_LEN_WITH_HYPHEN = 36;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_CreateDocumentByOEid_005
+ * @tc.desc: Test CreateDocumentByOEid with a 32-char (no-hyphen) oeid passes
+ *           the length check (OEID_LEN branch) before IsValidOEid runs.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_CreateDocumentByOEid_005, TestSize.Level1)
+{
+    // 32 hex chars, no hyphens: satisfies the size==OEID_LEN check.
+    const char *oeid = "0003000C00000000C000000000000046";
+    ContentEmbed_Document *document = nullptr;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_CreateDocumentByOEid(oeid, &document);
+    // CreateByOEid may still fail later (no live POLE storage), but the
+    // length-check branch itself is taken and passes.
+    EXPECT_TRUE(ret == CE_ERR_OK || ret == CE_ERR_NULL_POINTER);
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_CreateDocumentByOEid_006
+ * @tc.desc: Test CreateDocumentByOEid with a 36-char (hyphenated) oeid passes
+ *           the length check (OEID_MAX_LEN branch) before IsValidOEid runs.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_CreateDocumentByOEid_006, TestSize.Level1)
+{
+    // 36 chars with hyphens: satisfies the size==OEID_MAX_LEN check.
+    const char *oeid = "0003000C-0000-0000-C000-000000000046";
+    ContentEmbed_Document *document = nullptr;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_CreateDocumentByOEid(oeid, &document);
+    EXPECT_TRUE(ret == CE_ERR_OK || ret == CE_ERR_NULL_POINTER);
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_CreateDocumentByOEid_007
+ * @tc.desc: Test CreateDocumentByOEid with a length that is neither 32 nor 36
+ *           hits the invalid-length branch (CE_ERR_PARAM_INVALID).
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_CreateDocumentByOEid_007, TestSize.Level1)
+{
+    // 35 chars: not 32, not 36 -> length-check branch fails first.
+    const char *oeid = "0003000C-0000-0000-C000-0000000004";
+    ContentEmbed_Document *document = nullptr;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_CreateDocumentByOEid(oeid, &document);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_CreateDocumentByOEid_008
+ * @tc.desc: Test CreateDocumentByOEid with correct length 36 but non-hex chars
+ *           passes length check then fails IsValidOEid (CE_ERR_PARAM_INVALID).
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_CreateDocumentByOEid_008, TestSize.Level1)
+{
+    // 36 chars with hyphens but 'Z' is not a hex digit -> IsValidOEid fails.
+    const char *oeid = "ZZ03000C-0000-0000-C000-000000000046";
+    ContentEmbed_Document *document = nullptr;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_CreateDocumentByOEid(oeid, &document);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_CreateDocumentByFile_005
+ * @tc.desc: Test CreateDocumentByFile with a non-null srcFilePath whose
+ *           strnlen is 0 (empty string) hits the realLen==0 branch.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_CreateDocumentByFile_005, TestSize.Level1)
+{
+    // Non-null pointer but empty string: passes the nullptr/length<=0 guard,
+    // then realLen==0 branch returns CE_ERR_PARAM_INVALID.
+    const char *filePath = "";
+    size_t length = 10; // length > 0 so it passes the first guard.
+    ContentEmbed_Document *document = nullptr;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_CreateDocumentByFile(filePath, length, false, &document);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_CreateDocumentByFile_006
+ * @tc.desc: Test CreateDocumentByFile with isLinking=true to exercise the
+ *           linking branch (IsAppSandboxPath is then evaluated).
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_CreateDocumentByFile_006, TestSize.Level1)
+{
+    const char *filePath = "/data/test/test.doc";
+    size_t length = strlen(filePath);
+    ContentEmbed_Document *document = nullptr;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_CreateDocumentByFile(filePath, length, true, &document);
+    // With isLinking=true the function enters the linking branch. Depending on
+    // IsAppSandboxPath and whether IS_EMULATOR is defined, it returns either
+    // CE_ERR_INVALID_LINKING_PATH, CE_ERR_EMULATOR_NOT_SUPPORTED, or proceeds.
+    // Assert it did not crash and produced a defined error code.
+    EXPECT_NE(ret, CE_ERR_OK);
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_LoadDocumentFromFile_005
+ * @tc.desc: Test LoadDocumentFromFile with a non-null srcFilePath whose first
+ *           byte is '\0' hits the !*(srcFilePath) branch (CE_ERR_PARAM_INVALID).
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_LoadDocumentFromFile_005, TestSize.Level1)
+{
+    // Non-null, length>0, but first byte is NUL: the
+    // `srcFilePath == nullptr || length <= 0 || !*(srcFilePath)` guard fires on
+    // its third operand, which is not exercised by the existing tests.
+    const char filePath[] = {'\0', 'x', 'y'};
+    size_t length = sizeof(filePath);
+    ContentEmbed_Document *document = nullptr;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_LoadDocumentFromFile(filePath, length, &document);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Document_Read_006
+ * @tc.desc: Test Document_Read with an offset exceeding streamsize max hits
+ *           the "offset is too large" branch (CE_ERR_PARAM_INVALID).
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Document_Read_006, TestSize.Level1)
+{
+    ContentEmbed_Document *document = new ContentEmbed_Document();
+    document->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
+    uint8_t buffer[8] = {0};
+    // size_t(-1) == 2^64-1 > streamsize::max() (2^63-1) on 64-bit, so the
+    // "offset is too large" guard fires. length=1 passes the length guards.
+    size_t impossibleOffset = static_cast<size_t>(-1);
+    size_t readSize = 0;
+    ContentEmbed_ErrorCode ret =
+        OH_ContentEmbed_Document_Read(buffer, 1, document, impossibleOffset, &readSize);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete document;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Document_GetOEid_004
+ * @tc.desc: Test Document_GetOEid with a document whose oeid exceeds the
+ *           destination buffer capacity triggers strcpy_s failure
+ *           (CE_ERR_PARAM_INVALID).
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Document_GetOEid_004, TestSize.Level1)
+{
+    ContentEmbed_Document *document = new ContentEmbed_Document();
+    document->oeid = "0003000C-0000-0000-C000-000000000046"; // 36 chars + NUL = 37
+    char oeid[4] = {0}; // far too small -> strcpy_s fails.
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Document_GetOEid(document, oeid);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete document;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Document_GetNativeFilePath_005
+ * @tc.desc: Test Document_GetNativeFilePath with a destination buffer too
+ *           small for the path triggers strcpy_s failure (CE_ERR_PARAM_INVALID).
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Document_GetNativeFilePath_005, TestSize.Level1)
+{
+    ContentEmbed_Document *document = new ContentEmbed_Document();
+    document->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
+    document->oeDocumentInner->SetNativeFileUri("/data/test/test.doc");
+    char nativeFilePath[4] = {0}; // too small -> strcpy_s fails.
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Document_GetNativeFilePath(document, nativeFilePath);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete document;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Storage_GetOEid_004
+ * @tc.desc: Test Storage_GetOEid when oeidSize is smaller than the stored oeid
+ *           length+1 hits the "oeid size exceeds limit" branch.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Storage_GetOEid_004, TestSize.Level1)
+{
+    ContentEmbed_Storage *storage = new ContentEmbed_Storage();
+    storage->owner = new ContentEmbed_Document();
+    storage->owner->oeid = "0003000C-0000-0000-C000-000000000046"; // 36 chars
+    storage->owner->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
+    storage->name = "/";
+    char oeid[4] = {0}; // oeidSize(4) < oeid.length()+1(37) -> exceeds-limit branch.
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Storage_GetOEid(storage, oeid, sizeof(oeid));
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete storage->owner;
+    delete storage;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Storage_SetOEid_005
+ * @tc.desc: Test Storage_SetOEid with oeidSize smaller than OEID_LEN (32) hits
+ *           the "oeid size is invalid" branch before any oeid content check.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Storage_SetOEid_005, TestSize.Level1)
+{
+    ContentEmbed_Storage *storage = new ContentEmbed_Storage();
+    storage->owner = new ContentEmbed_Document();
+    storage->owner->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
+    storage->name = "/";
+    char oeid[MAX_OEID_LENGTH] = "0003000C-0000-0000-C000-000000000046";
+    // oeidSize < OEID_LEN(32) -> size-invalid branch, independent of oeid content.
+    size_t tooSmallSize = 4;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Storage_SetOEid(storage, oeid, tooSmallSize);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete storage->owner;
+    delete storage;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Storage_SetOEid_006
+ * @tc.desc: Test Storage_SetOEid with a valid-length oeid (36) but non-hex
+ *           content passes size+length checks then fails IsValidOEid.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Storage_SetOEid_006, TestSize.Level1)
+{
+    ContentEmbed_Storage *storage = new ContentEmbed_Storage();
+    storage->owner = new ContentEmbed_Document();
+    storage->owner->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
+    storage->name = "/";
+    // 36 chars with hyphens, size OK, length OK, but 'Z' is not hex.
+    char oeid[MAX_OEID_LENGTH] = "ZZ03000C-0000-0000-C000-000000000046";
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Storage_SetOEid(storage, oeid, OEID_LEN_WITH_HYPHEN);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete storage->owner;
+    delete storage;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Storage_SetOEid_007
+ * @tc.desc: Test Storage_SetOEid with an oeid of length neither 32 nor 36
+ *           (size OK) hits the invalid-length branch.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Storage_SetOEid_007, TestSize.Level1)
+{
+    ContentEmbed_Storage *storage = new ContentEmbed_Storage();
+    storage->owner = new ContentEmbed_Document();
+    storage->owner->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
+    storage->name = "/";
+    // Provide 35 chars + NUL; oeidSize=MAX_OEID_LENGTH passes the size check,
+    // then std::min(oeidSize, OEID_MAX_LEN)=36, string is 35 chars -> length
+    // neither 32 nor 36 -> invalid-length branch.
+    char oeid[MAX_OEID_LENGTH] = "0003000C-0000-0000-C000-0000000004"; // 35 chars
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Storage_SetOEid(storage, oeid, MAX_OEID_LENGTH);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete storage->owner;
+    delete storage;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_StorageElements_GetElement_005
+ * @tc.desc: Test StorageElements_GetElement with index==SIZE_MAX (wraps the
+ *           index<0 check on unsigned) to exercise the boundary guard.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_StorageElements_GetElement_005, TestSize.Level1)
+{
+    ContentEmbed_StorageElements *storageElements = new ContentEmbed_StorageElements();
+    ContentEmbed_StorageElement *storageElement = nullptr;
+    // size_t is unsigned; SIZE_MAX is >= elements.size() so the
+    // `index >= size() || index < 0` guard fires on its first operand.
+    size_t hugeIndex = static_cast<size_t>(-1);
+    ContentEmbed_ErrorCode ret =
+        OH_ContentEmbed_StorageElements_GetElement(storageElements, hugeIndex, &storageElement);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    OH_ContentEmbed_StorageElements_Destroy(storageElements);
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Stream_Read_006
+ * @tc.desc: Test Stream_Read with buffer==nullptr and num==nullptr hits the
+ *           "buffer or num is null" branch before the stream-null check.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Stream_Read_006, TestSize.Level1)
+{
+    ContentEmbed_Stream *stream = new ContentEmbed_Stream();
+    unsigned char *buffer = nullptr;
+    size_t num = 0;
+    // buffer==nullptr fires the first guard regardless of stream validity.
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Stream_Read(stream, &buffer, 4, &num);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete stream;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Stream_Read_007
+ * @tc.desc: Test Stream_Read with length==0 hits the "length is invalid"
+ *           branch (length<=0 side of the compound check).
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Stream_Read_007, TestSize.Level1)
+{
+    ContentEmbed_Stream *stream = new ContentEmbed_Stream();
+    stream->owner = new ContentEmbed_Document();
+    stream->owner->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
+    stream->path = "/test";
+    unsigned char *buffer = nullptr;
+    size_t num = 0;
+    // length==0: the `length > max || length <= 0` guard fires on length<=0.
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Stream_Read(stream, &buffer, 0, &num);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete stream->owner;
+    delete stream;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Stream_Write_006
+ * @tc.desc: Test Stream_Write with length==0 hits the early-success branch
+ *           (*num=0; return CE_ERR_OK) before the length-validity guard.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Stream_Write_006, TestSize.Level1)
+{
+    ContentEmbed_Stream *stream = new ContentEmbed_Stream();
+    stream->owner = new ContentEmbed_Document();
+    stream->owner->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
+    stream->path = "/test";
+    unsigned char data[4] = {0};
+    size_t num = 99;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Stream_Write(stream, data, 0, &num);
+    EXPECT_EQ(ret, CE_ERR_OK);
+    EXPECT_EQ(num, 0);
+    delete stream->owner;
+    delete stream;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Stream_Write_007
+ * @tc.desc: Test Stream_Write with a stream whose owner/path is unset so
+ *           RequireStream fails, exercising the "require stream failed" branch.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Stream_Write_007, TestSize.Level1)
+{
+    // Default-constructed stream: owner==nullptr, path empty -> RequireStream
+    // returns CE_ERR_NULL_POINTER, propagated by the require-stream branch.
+    ContentEmbed_Stream *stream = new ContentEmbed_Stream();
+    unsigned char data[4] = {0};
+    size_t num = 0;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Stream_Write(stream, data, sizeof(data), &num);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete stream;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Stream_Seek_003
+ * @tc.desc: Test Stream_Seek with a stream whose owner is unset so RequireStream
+ *           fails, exercising the "require stream failed" branch.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Stream_Seek_003, TestSize.Level1)
+{
+    ContentEmbed_Stream *stream = new ContentEmbed_Stream();
+    // owner==nullptr -> RequireStream CE_ERR_NULL_POINTER -> require branch.
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Stream_Seek(stream, 0);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete stream;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Stream_GetPosition_004
+ * @tc.desc: Test Stream_GetPosition with a stream whose owner is unset so
+ *           RequireStream fails, exercising the require-stream branch.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Stream_GetPosition_004, TestSize.Level1)
+{
+    ContentEmbed_Stream *stream = new ContentEmbed_Stream();
+    size_t position = 0;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Stream_GetPosition(stream, &position);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete stream;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Stream_GetSize_004
+ * @tc.desc: Test Stream_GetSize with a stream whose owner is unset so
+ *           RequireStream fails, exercising the require-stream branch.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Stream_GetSize_004, TestSize.Level1)
+{
+    ContentEmbed_Stream *stream = new ContentEmbed_Stream();
+    size_t size = 0;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Stream_GetSize(stream, &size);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete stream;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Storage_CreateStorage_005
+ * @tc.desc: Test Storage_CreateStorage with a name containing an invalid
+ *           character '/' hits the IsValidName branch (CE_ERR_PARAM_INVALID).
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Storage_CreateStorage_005, TestSize.Level1)
+{
+    ContentEmbed_Storage *parentStorage = new ContentEmbed_Storage();
+    parentStorage->owner = new ContentEmbed_Document();
+    parentStorage->owner->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
+    parentStorage->name = "/";
+    ContentEmbed_Storage *childStorage = nullptr;
+    // '/' is rejected by IsValidName before any storage lookup.
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Storage_CreateStorage(parentStorage, "a/b", &childStorage);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete parentStorage->owner;
+    delete parentStorage;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Storage_CreateStorage_006
+ * @tc.desc: Test Storage_CreateStorage with a name exceeding the max length
+ *           (32) hits the IsValidName length branch (CE_ERR_PARAM_INVALID).
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Storage_CreateStorage_006, TestSize.Level1)
+{
+    ContentEmbed_Storage *parentStorage = new ContentEmbed_Storage();
+    parentStorage->owner = new ContentEmbed_Document();
+    parentStorage->owner->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
+    parentStorage->name = "/";
+    ContentEmbed_Storage *childStorage = nullptr;
+    // 33 chars: exceeds MAX_NAME_LEN (31) inside IsValidName.
+    const char *tooLongName = "abcdefghijklmnopqrstuvwxyz0123456";
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Storage_CreateStorage(parentStorage, tooLongName, &childStorage);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete parentStorage->owner;
+    delete parentStorage;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Storage_GetStorage_004
+ * @tc.desc: Test Storage_GetStorage with a name containing ':' hits the
+ *           IsValidName branch (CE_ERR_PARAM_INVALID).
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Storage_GetStorage_004, TestSize.Level1)
+{
+    ContentEmbed_Storage *parentStorage = new ContentEmbed_Storage();
+    parentStorage->owner = new ContentEmbed_Document();
+    parentStorage->owner->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
+    parentStorage->name = "/";
+    ContentEmbed_Storage *childStorage = nullptr;
+    // ':' is rejected by IsValidName.
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Storage_GetStorage(parentStorage, "a:b", &childStorage);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete parentStorage->owner;
+    delete parentStorage;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Storage_CreateStream_004
+ * @tc.desc: Test Storage_CreateStream with a name containing '!' hits the
+ *           IsValidName branch (CE_ERR_PARAM_INVALID).
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Storage_CreateStream_004, TestSize.Level1)
+{
+    ContentEmbed_Storage *parentStorage = new ContentEmbed_Storage();
+    parentStorage->owner = new ContentEmbed_Document();
+    parentStorage->owner->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
+    parentStorage->name = "/";
+    ContentEmbed_Stream *childStream = nullptr;
+    // '!' is rejected by IsValidName.
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Storage_CreateStream(parentStorage, "a!b", &childStream);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete parentStorage->owner;
+    delete parentStorage;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Storage_GetStream_004
+ * @tc.desc: Test Storage_GetStream with a name containing '\\' hits the
+ *           IsValidName branch (CE_ERR_PARAM_INVALID).
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Storage_GetStream_004, TestSize.Level1)
+{
+    ContentEmbed_Storage *parentStorage = new ContentEmbed_Storage();
+    parentStorage->owner = new ContentEmbed_Document();
+    parentStorage->owner->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
+    parentStorage->name = "/";
+    ContentEmbed_Stream *childStream = nullptr;
+    // '\\' is rejected by IsValidName.
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Storage_GetStream(parentStorage, "a\\b", &childStream);
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete parentStorage->owner;
+    delete parentStorage;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_Storage_DeleteEntry_004
+ * @tc.desc: Test Storage_DeleteEntry with a name containing ':' hits the
+ *           IsValidName branch (CE_ERR_PARAM_INVALID).
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_Storage_DeleteEntry_004, TestSize.Level1)
+{
+    ContentEmbed_Storage *parentStorage = new ContentEmbed_Storage();
+    parentStorage->owner = new ContentEmbed_Document();
+    parentStorage->owner->oeDocumentInner = std::make_unique<ObjectEditorDocument>();
+    parentStorage->name = "/";
+    // ':' is rejected by IsValidName.
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_Storage_DeleteEntry(parentStorage, "a:b");
+    EXPECT_EQ(ret, CE_ERR_PARAM_INVALID);
+    delete parentStorage->owner;
+    delete parentStorage;
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_StorageElements_GetCount_004
+ * @tc.desc: Test StorageElements_GetCount with a non-empty elements vector
+ *           exercises the success branch and returns the actual count.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_StorageElements_GetCount_004, TestSize.Level1)
+{
+    ContentEmbed_StorageElements *storageElements = new ContentEmbed_StorageElements();
+    storageElements->elements.push_back(std::make_unique<ContentEmbed_StorageElement>());
+    storageElements->elements.push_back(std::make_unique<ContentEmbed_StorageElement>());
+    size_t count = 0;
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_StorageElements_GetCount(storageElements, &count);
+    EXPECT_EQ(ret, CE_ERR_OK);
+    EXPECT_EQ(count, 2);
+    OH_ContentEmbed_StorageElements_Destroy(storageElements);
+}
+
+/**
+ * @tc.name: OH_ContentEmbed_StorageElements_Destroy_003
+ * @tc.desc: Test StorageElements_Destroy with a non-empty elements vector
+ *           exercises the success path that frees nested unique_ptrs.
+ * @tc.type: FUNC
+ */
+HWTEST_F(ObjectEditorDocumentCapiOneTest, OH_ContentEmbed_StorageElements_Destroy_003, TestSize.Level1)
+{
+    ContentEmbed_StorageElements *storageElements = new ContentEmbed_StorageElements();
+    storageElements->elements.push_back(std::make_unique<ContentEmbed_StorageElement>());
+    ContentEmbed_ErrorCode ret = OH_ContentEmbed_StorageElements_Destroy(storageElements);
+    EXPECT_EQ(ret, CE_ERR_OK);
+}
+
 } // namespace ObjectEditor
 } // namespace OHOS

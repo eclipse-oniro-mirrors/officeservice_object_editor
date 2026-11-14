@@ -13,9 +13,7 @@
         "syscap": [
             "SystemCapability.ContentEmbed.ObjectEditor"
         ],
-        "features": [
-            "object_editor_emulator"
-        ],
+        "features": [],
         "adapted_system_type": [ "standard" ],
         "rom": "",
         "ram": "",
